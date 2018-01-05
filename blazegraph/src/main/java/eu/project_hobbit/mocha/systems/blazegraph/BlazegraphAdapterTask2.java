@@ -38,40 +38,48 @@ public class BlazegraphAdapterTask2 extends AbstractBlazegraphAdapterTask {
 	public void receiveGeneratedTask(String taskId, byte[] data) {
 		// check if select or insert
 		String queryStr = RabbitMQUtils.readString(data);
+		byte[] result = null;
 		switch (getQueryType(queryStr)) {
 		case SPARQL_QUERY_TYPE:
-			sparql(taskId, data);
+			result = sparql(data);
 			break;
 		case UPDATE_QUERY_TYPE:
-			update(taskId, data);
+			result = update(data);
 			break;
 		case UNKOWN_QUERY_TYPE:
 		default:
 			LOGGER.error("Unkown Query Type {}", queryStr);
 		}
-
+		try {
+			sendResultToEvalStorage(taskId, result);
+		} catch (IOException e) {
+			LOGGER.error("Could not send results to eval storage", e);
+		}
 	}
 
-	private void sparql(String taskId, byte[] data) {
+	/**
+	 * Select the data and returns it as a JSON Stirng
+	 * @param data
+	 * @return
+	 */
+	public byte[] sparql(byte[] data) {
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		select(data, baos);
 
-		byte[] result = baos.toByteArray();
-		try {
-			sendResultToEvalStorage(taskId, result);
-		} catch (IOException e) {
-			LOGGER.error("Could not send results to eval storage", e);
-		}
+		return baos.toByteArray();
+		
 	}
 
-	private void update(String taskId, byte[] data) {
+	/**
+	 * Inserts the query in the data byte array and returns an empty byte array
+	 * @param data
+	 * @return
+	 */
+	public byte[] update(byte[] data) {
 		byte[] result = new byte[0];
-		try {
-			sendResultToEvalStorage(taskId, result);
-		} catch (IOException e) {
-			LOGGER.error("Could not send results to eval storage", e);
-		}
+		insert(data);
+		return result;
 	}
 
 	@Override

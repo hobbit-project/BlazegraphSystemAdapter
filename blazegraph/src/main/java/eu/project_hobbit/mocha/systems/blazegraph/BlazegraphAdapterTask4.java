@@ -23,6 +23,22 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 	@Override
 	public void receiveGeneratedTask(String taskId, byte[] data) {
 		// receive sparql
+		StringBuilder builder = performTask(data);
+		try {
+			sendResultToEvalStorage(taskId, builder.toString().getBytes());
+		} catch (IOException e) {
+			LOGGER.error("Could not send results to storage.", e);
+		}
+	}
+	
+	/**
+	 * Performs the select or select count and returns either a uri comma seperated list
+	 * or a number
+	 * 
+	 * @param data
+	 * @return
+	 */
+	public StringBuilder performTask(byte[] data) {
 		String queryString = RabbitMQUtils.readString(data);
 		Query query = QueryFactory.create(queryString);
 		QueryExecution qexec = QueryExecutionFactory.sparqlService(url+"sparql", query);
@@ -46,11 +62,7 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 				}
 			}
 		}
-		try {
-			sendResultToEvalStorage(taskId, builder.toString().getBytes());
-		} catch (IOException e) {
-			LOGGER.error("Could not send results to storage.", e);
-		}
+		return builder;
 	}
 
 	@Override
