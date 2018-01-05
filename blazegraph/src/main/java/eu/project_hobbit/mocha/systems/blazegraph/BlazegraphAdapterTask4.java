@@ -12,6 +12,12 @@ import org.apache.jena.query.ResultSet;
 import org.apache.jena.query.ResultSetFormatter;
 import org.hobbit.core.rabbit.RabbitMQUtils;
 
+/**
+ * OPEN MOCHA Challenge Blazegraph adapter for Task 4
+ * 
+ * @author f.conrads
+ *
+ */
 public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 
 	@Override
@@ -21,7 +27,6 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 		Query query = QueryFactory.create(queryString);
 		QueryExecution qexec = QueryExecutionFactory.sparqlService(url+"sparql", query);
 		ResultSet res = qexec.execSelect();
-		byte[] result;
 		StringBuilder builder= new StringBuilder();
 		int size = ResultSetFormatter.consume(res);
 		while(res.hasNext()) {
@@ -50,7 +55,8 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 
 	@Override
 	public void receiveGeneratedData(byte[] data) {
-		// TODO Auto-generated method stub
+		long time = bulkLoad(data);
+		LOGGER.info("Bulk Load took {} ms", time);
 
 	}
 

@@ -2,10 +2,18 @@ package eu.project_hobbit.mocha.systems.blazegraph;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 
-public class BlazegraphAdapterTask3 extends AbstractBlazegraphAdapterTask{
+import org.hobbit.core.rabbit.RabbitMQUtils;
 
-
+/**
+ * OPEN MOCHA Challenge Blazegraph adapter for Task 3
+ * 
+ * @author f.conrads
+ *
+ */
+public class BlazegraphAdapterTask3 extends AbstractBlazegraphAdapterTask {
 
 	@Override
 	public void receiveGeneratedTask(String taskId, byte[] data) {
@@ -22,9 +30,15 @@ public class BlazegraphAdapterTask3 extends AbstractBlazegraphAdapterTask{
 
 	@Override
 	public void receiveGeneratedData(byte[] data) {
-		// TODO Auto-generated method stub
-		
-	}
+		byte[] lengthNameArr = Arrays.copyOfRange(data, 0, 4);
+		int lengthName = ByteBuffer.wrap(lengthNameArr).getInt();
+		byte[] nameArr = Arrays.copyOfRange(data, 4, lengthName);
+		String name = RabbitMQUtils.readString(nameArr);
+		byte[] lengthContentArr = Arrays.copyOfRange(data, lengthName + 4, lengthName + 8);
+		int lengthContent = ByteBuffer.wrap(lengthContentArr).getInt();
+		byte[] content = Arrays.copyOfRange(data, lengthName + 8, lengthContent);
+		bulkLoad(content, name);
 
+	}
 
 }

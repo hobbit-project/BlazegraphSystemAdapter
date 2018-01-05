@@ -84,6 +84,11 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 	}
 
 	protected long bulkLoad(byte[] data) {
+		return bulkLoad(data, "http://default.com");
+	}
+	
+	protected long bulkLoad(byte[] data, String graph) {
+		
 		long bulkLoadTime=-1;
 		// bulk load received data
 		String fileName = UUID.randomUUID().toString()+".ttl";
@@ -96,7 +101,7 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 				LOGGER.error("Could not find File.", e1);
 			}
 			long bulkLoadStartTime = Calendar.getInstance().getTimeInMillis();
-			DataLoader.main(new String[] {"-defaultGraph", "http://default.com", fileName});
+			DataLoader.main(new String[] {"-defaultGraph", graph, fileName});
 			long bulkLoadEndTime = Calendar.getInstance().getTimeInMillis();
 			bulkLoadTime = bulkLoadEndTime - bulkLoadStartTime;
 		} catch (IOException e) {
@@ -113,6 +118,9 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 		// Force termination after 5 seconds.
 		try {
 			server.stop();
+			//remove blazegraph.jnl
+			File journal =  new File("blazegraph.jnl");
+			journal.delete();
 			storeExecutor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (Exception e) {
 			LOGGER.error("Could not force stop Blazegraph.", e);
