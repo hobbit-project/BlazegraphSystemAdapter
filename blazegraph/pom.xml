@@ -3,7 +3,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>eu.project_hobbit.mocha.systems</groupId>
 	<artifactId>blazegraph</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>Blazegraph System Adapter for MOCHA Challenge</name>
 	<description>Blazegraph System Adapter for MOCHA Challenge at Project Hobbit</description>
 	<properties>
@@ -28,10 +28,27 @@
 
 		<dependency>
 			<groupId>com.blazegraph</groupId>
-			<artifactId>bigdata-core</artifactId>
+			<artifactId>bigdata</artifactId>
 			<version>2.0.0</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/repository/blazegraph.jar</systemPath>
 		</dependency>
 
+		<dependency>
+			<groupId>org.apache.httpcomponents</groupId>
+			<artifactId>httpclient</artifactId>
+			<version>4.5.3</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents</groupId>
+			<artifactId>httpcore</artifactId>
+			<version>4.4.6</version>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-log4j12</artifactId>
+			<version>1.7.6</version>
+		</dependency>
 	</dependencies>
 	<repositories>
 		<!-- Let's use a local repository for the local libraries of this project -->

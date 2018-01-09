@@ -9,7 +9,6 @@ import org.apache.jena.query.QueryExecutionFactory;
 import org.apache.jena.query.QueryFactory;
 import org.apache.jena.query.QuerySolution;
 import org.apache.jena.query.ResultSet;
-import org.apache.jena.query.ResultSetFormatter;
 import org.hobbit.core.rabbit.RabbitMQUtils;
 
 /**
@@ -44,7 +43,7 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 		QueryExecution qexec = QueryExecutionFactory.sparqlService(url+"sparql", query);
 		ResultSet res = qexec.execSelect();
 		StringBuilder builder= new StringBuilder();
-		int size = ResultSetFormatter.consume(res);
+		
 		while(res.hasNext()) {
 			QuerySolution solution = res.next();
 			Iterator<String> varNames = solution.varNames();
@@ -57,11 +56,12 @@ public class BlazegraphAdapterTask4 extends AbstractBlazegraphAdapterTask {
 					//assuming it is a count
 					builder.append(solution.get(varName).asLiteral().getLong());
 				}
-				if(res.getRowNumber()<size) {
-					builder.append(", ");
-				}
+				builder.append(", ");
+				
 			}
 		}
+		builder.setLength(builder.length()-2);
+//		builder.subSequence(0, builder.length()-2);
 		return builder;
 	}
 

@@ -6,22 +6,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.Calendar;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
 import org.hobbit.core.components.AbstractSystemAdapter;
 import org.hobbit.core.rabbit.RabbitMQUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.bigdata.rdf.sail.webapp.ConfigParams;
-import com.bigdata.rdf.sail.webapp.NanoSparqlServer;
 import com.bigdata.rdf.store.DataLoader;
-
 import org.apache.jena.query.Query;
 import org.apache.jena.query.QueryExecution;
 import org.apache.jena.query.QueryExecutionFactory;
@@ -31,7 +22,6 @@ import org.apache.jena.query.ResultSetFormatter;
 import org.apache.jena.update.UpdateExecutionFactory;
 import org.apache.jena.update.UpdateProcessor;
 import org.apache.jena.update.UpdateRequest;
-import org.eclipse.jetty.server.Server;
 
 /**
  * Abstract Blazegraph adapter (will initiate start and stop of server)
@@ -41,11 +31,10 @@ import org.eclipse.jetty.server.Server;
  */
 public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapter {
 
-	private ExecutorService storeExecutor;
 	protected static final Logger LOGGER = LoggerFactory.getLogger(AbstractBlazegraphAdapterTask.class);
 
-	private Server server;
-	protected String url = "http://localhost:9999/blazegraph/";
+	protected String url = "http://127.0.0.1:9999/blazegraph/";
+	private Process serverProcess;
 
 	@Override
 	public void init() throws Exception {
@@ -60,37 +49,13 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 	 */
 	public void startServer() throws Exception {
 		// Start blazegraph
-		storeExecutor = Executors.newSingleThreadExecutor();
-		Map<String, String> initParams = createParams();
-		String jettyXml = ClassLoader.getSystemResource("jetty.xml").toURI().toString();
-		final Server server = NanoSparqlServer.newInstance(9999, jettyXml, null/* indexManager */, initParams);
-		this.server = server;
-		storeExecutor.execute(new Runnable() {
-
-			@Override
-			public void run() {
-				try {
-					server.start();
-				} catch (Exception e) {
-					LOGGER.error("Could not start Blazegraph.", e);
-				}
-			}
-		});
-
+		File jar = new File("repository/blazegraph.jar");
+		
+	    serverProcess = Runtime.getRuntime().exec(new String[] {"java", "-server", "-Xmx4G", "-jar", jar.getAbsolutePath(), "RWStore.properties"});
+	    
+	    Thread.sleep(5000);
 	}
 
-	private Map<String, String> createParams() {
-		final Map<String, String> initParams = new LinkedHashMap<String, String>();
-
-		initParams.put(ConfigParams.NAMESPACE, "kb");
-
-		initParams.put(ConfigParams.QUERY_THREAD_POOL_SIZE,
-				Integer.toString(ConfigParams.DEFAULT_QUERY_THREAD_POOL_SIZE));
-
-		initParams.put(ConfigParams.FORCE_OVERFLOW, Boolean.toString(false));
-
-		return initParams;
-	}
 
 	protected long bulkLoad(byte[] data) {
 		return bulkLoad(data, "http://default.com");
@@ -101,22 +66,30 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 		long bulkLoadTime = -1;
 		// bulk load received data
 		String fileName = UUID.randomUUID().toString() + ".ttl";
-		File file = new File(fileName);
+		File dir = new File("tmpbla");
+		dir.mkdirs();
+		File file = new File(dir.getAbsolutePath()+File.separator+fileName);
 		try {
 			file.createNewFile();
-			try (PrintWriter pw = new PrintWriter(fileName)) {
+			try (PrintWriter pw = new PrintWriter(file)) {
 				pw.print(RabbitMQUtils.readString(data));
 			} catch (FileNotFoundException e1) {
 				LOGGER.error("Could not find File.", e1);
 			}
+			closeServer(false);
 			long bulkLoadStartTime = Calendar.getInstance().getTimeInMillis();
-			DataLoader.main(new String[] { "-defaultGraph", graph, fileName });
+			DataLoader.main(new String[] { "-defaultGraph", graph, "RWStore.properties", dir.getAbsolutePath()+File.separator+fileName });
 			long bulkLoadEndTime = Calendar.getInstance().getTimeInMillis();
+			startServer();
 			bulkLoadTime = bulkLoadEndTime - bulkLoadStartTime;
 		} catch (IOException e) {
 			LOGGER.error("Could not bulk load data.", e);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} finally {
+			file.delete();
 		}
-		file.delete();
 		return bulkLoadTime;
 	}
 
@@ -127,21 +100,34 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 	}
 
 	/**
-	 * Stops the Server and clean up the db file
+	 * Closes the server and deletes the journal file
 	 */
 	public void closeServer() {
+		closeServer(true);
+	}
+	
+	/**
+	 * Stops the Server and clean up the db file
+	 * @param removeJournal true if journal file should be deleted
+	 */
+	public void closeServer(boolean removeJournal) {
 		// stop blazegraph
-		storeExecutor.shutdown();
-		// Force termination after 5 seconds.
 		try {
-			server.stop();
+//			serverProcess.destroy();
+			serverProcess.destroyForcibly();
+			serverProcess.waitFor();
 			// remove blazegraph.jnl
-			File journal = new File("blazegraph.jnl");
-			journal.delete();
-			storeExecutor.awaitTermination(5, TimeUnit.SECONDS);
+			if(removeJournal) {
+				removeJournal();
+			}
 		} catch (Exception e) {
 			LOGGER.error("Could not force stop Blazegraph.", e);
 		}
+	}
+	
+	private void removeJournal() {
+		File journal = new File("blazegraph.jnl");
+		journal.delete();
 	}
 
 	protected long select(byte[] data, OutputStream outStream) {
@@ -159,7 +145,7 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 		String insertQuery = RabbitMQUtils.readString(data);
 		UpdateRequest update = new UpdateRequest();
 		update.add(insertQuery);
-		UpdateProcessor processor = UpdateExecutionFactory.createRemote(update, url + "update");
+		UpdateProcessor processor = UpdateExecutionFactory.createRemote(update, url + "sparql");
 		long start = Calendar.getInstance().getTimeInMillis();
 		processor.execute();
 		long end = Calendar.getInstance().getTimeInMillis();

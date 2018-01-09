@@ -1,0 +1,9 @@
+FROM java
+
+ADD target/blazegraph-1.0.0.jar /blazegraph/blazegraph-1.0.0.jar
+ADD repository/blazegraph.jar /blazegraph/repository/blazegraph.jar
+ADD RWStore.properties /blazegraph/RWStore.properties
+
+WORKDIR /blazegraph
+
+CMD java -cp example.jar org.hobbit.core.run.ComponentStarter eu.project_hobbit.mocha.systems.blazegraph.BlazegraphAdapterTask1

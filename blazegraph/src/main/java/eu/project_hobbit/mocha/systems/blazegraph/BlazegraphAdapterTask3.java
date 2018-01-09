@@ -32,11 +32,11 @@ public class BlazegraphAdapterTask3 extends AbstractBlazegraphAdapterTask {
 	public void receiveGeneratedData(byte[] data) {
 		byte[] lengthNameArr = Arrays.copyOfRange(data, 0, 4);
 		int lengthName = ByteBuffer.wrap(lengthNameArr).getInt();
-		byte[] nameArr = Arrays.copyOfRange(data, 4, lengthName);
+		byte[] nameArr = Arrays.copyOfRange(data, 4, 4+lengthName);
 		String name = RabbitMQUtils.readString(nameArr);
 		byte[] lengthContentArr = Arrays.copyOfRange(data, lengthName + 4, lengthName + 8);
 		int lengthContent = ByteBuffer.wrap(lengthContentArr).getInt();
-		byte[] content = Arrays.copyOfRange(data, lengthName + 8, lengthContent);
+		byte[] content = Arrays.copyOfRange(data, lengthName + 8, lengthName + 8 + lengthContent);
 		bulkLoad(content, name);
 
 	}
