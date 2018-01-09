@@ -33,7 +33,7 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 
 	protected static final Logger LOGGER = LoggerFactory.getLogger(AbstractBlazegraphAdapterTask.class);
 
-	protected String url = "http://127.0.0.1:9999/blazegraph/";
+	protected String url = "http://127.0.0.1:9999/blazegraph/sparql";
 	private Process serverProcess;
 
 	@Override
@@ -52,11 +52,11 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 		File jar = new File("repository/blazegraph.jar");
 		
 	    serverProcess = Runtime.getRuntime().exec(new String[] {"java", "-server", "-Xmx4G", "-jar", jar.getAbsolutePath(), "RWStore.properties"});
-	    
+//	    serverProcess = Runtime.getRuntime().exec(jar.getAbsolutePath());
 	    Thread.sleep(5000);
 	}
 
-
+ 
 	protected long bulkLoad(byte[] data) {
 		return bulkLoad(data, "http://default.com");
 	}
@@ -133,7 +133,7 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 	protected long select(byte[] data, OutputStream outStream) {
 		String queryString = RabbitMQUtils.readString(data);
 		Query query = QueryFactory.create(queryString);
-		QueryExecution qexec = QueryExecutionFactory.sparqlService(url + "sparql", query);
+		QueryExecution qexec = QueryExecutionFactory.sparqlService(url, query);
 		long start = Calendar.getInstance().getTimeInMillis();
 		ResultSet res = qexec.execSelect();
 		long end = Calendar.getInstance().getTimeInMillis();
@@ -145,7 +145,7 @@ public abstract class AbstractBlazegraphAdapterTask extends AbstractSystemAdapte
 		String insertQuery = RabbitMQUtils.readString(data);
 		UpdateRequest update = new UpdateRequest();
 		update.add(insertQuery);
-		UpdateProcessor processor = UpdateExecutionFactory.createRemote(update, url + "sparql");
+		UpdateProcessor processor = UpdateExecutionFactory.createRemote(update, url);
 		long start = Calendar.getInstance().getTimeInMillis();
 		processor.execute();
 		long end = Calendar.getInstance().getTimeInMillis();

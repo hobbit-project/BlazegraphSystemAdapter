@@ -4,10 +4,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.jena.query.Query;
 import org.apache.jena.query.QueryExecution;
 import org.apache.jena.query.QueryExecutionFactory;
@@ -16,6 +20,7 @@ import org.apache.jena.query.ResultSet;
 import org.apache.jena.query.ResultSetFormatter;
 import org.apache.jena.update.UpdateExecutionFactory;
 import org.apache.jena.update.UpdateFactory;
+import org.apache.jena.update.UpdateProcessor;
 import org.apache.jena.update.UpdateRequest;
 import org.hobbit.core.rabbit.RabbitMQUtils;
 
@@ -44,44 +49,53 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 	@Override
 	public void receiveGeneratedData(byte[] arg0) {
 		if (dataLoadingFinished == false) {
-			ByteBuffer dataBuffer = ByteBuffer.wrap(arg0);
-			String fileName = RabbitMQUtils.readString(dataBuffer);
 
-			LOGGER.info("Receiving file: " + fileName);
+			saveData(arg0);
 
 			// graphUris.add(fileName);
-
-			byte[] content = new byte[dataBuffer.remaining()];
-			dataBuffer.get(content, 0, dataBuffer.remaining());
-
-			if (content.length != 0) {
-				FileOutputStream fos;
-				try {
-					if (fileName.contains("/"))
-						fileName = fileName.replaceAll("[^/]*[/]", "");
-					fos = new FileOutputStream(datasetFolderName + File.separator + fileName);
-					fos.write(content);
-					fos.close();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			}
 
 			if (totalReceived.incrementAndGet() == totalSent.get()) {
 				allDataReceivedMutex.release();
 			}
 		} else {
-			ByteBuffer buffer = ByteBuffer.wrap(arg0);
-			String insertQuery = RabbitMQUtils.readString(buffer);
+			insertData(arg0);
+		}
+	}
+	
+	public void insertData(byte[] arg0) {
+		String insertQuery = RabbitMQUtils.readString(arg0);
 
-			UpdateRequest updateRequest = UpdateFactory.create(insertQuery);
-			try {
-				UpdateExecutionFactory.createRemote(updateRequest, url + "sparql");
-			} catch (Exception e) {
+		UpdateRequest updateRequest = UpdateFactory.create(insertQuery);
+		try {
+			UpdateProcessor processor = UpdateExecutionFactory.createRemote(updateRequest, url);
+			processor.execute();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void saveData(byte[] data) {
+		byte[] lengthNameArr = Arrays.copyOfRange(data, 0, 4);
+		int lengthName = ByteBuffer.wrap(lengthNameArr).getInt();
+		byte[] nameArr = Arrays.copyOfRange(data, 4, 4+lengthName);
+		String fileName = RabbitMQUtils.readString(nameArr);
+		byte[] lengthContentArr = Arrays.copyOfRange(data, lengthName + 4, lengthName + 8);
+		int lengthContent = ByteBuffer.wrap(lengthContentArr).getInt();
+		byte[] content = Arrays.copyOfRange(data, lengthName + 8, lengthName + 8 + lengthContent);
+
+
+		if (content.length != 0) {
+			if (fileName.contains("/"))
+				fileName = fileName.replaceAll("[^/]*[/]", "");
+			try(PrintWriter pw = new PrintWriter(datasetFolderName+File.separator+fileName+".ttl")){
+				pw.print(RabbitMQUtils.readString(content));
+				pw.flush();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
+		LOGGER.info("Receiving file: " + fileName);
 	}
 
 	public void insert(String queryString) {
@@ -91,15 +105,16 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 
 		UpdateRequest updateRequest = UpdateFactory.create(queryString);
 		try {
-			UpdateExecutionFactory.createRemote(updateRequest, url + "sparql").execute();
+			UpdateProcessor processor = UpdateExecutionFactory.createRemote(updateRequest, url);
+			processor.execute();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
-	
+
 	public ByteArrayOutputStream sparql(String taskId, String queryString) {
 		Query query = QueryFactory.create(queryString);
-		QueryExecution qe = QueryExecutionFactory.createServiceRequest(url + "sparql", query);
+		QueryExecution qe = QueryExecutionFactory.createServiceRequest(url, query);
 		ResultSet results = null;
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -127,7 +142,7 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 	@Override
 	public void receiveGeneratedTask(String taskId, byte[] data) {
 		ByteBuffer buffer = ByteBuffer.wrap(data);
-		String queryString = RabbitMQUtils.readString(buffer);
+		String queryString = RabbitMQUtils.readString(data);
 		long timestamp1 = System.currentTimeMillis();
 		// LOGGER.info(taskId);
 		if (queryString.contains("INSERT DATA")) {
@@ -138,7 +153,7 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 				LOGGER.error("Got an exception while sending results.", e);
 			}
 		} else {
-			
+
 			ByteArrayOutputStream outputStream = sparql(taskId, queryString);
 			try {
 				this.sendResultToEvalStorage(taskId, outputStream.toByteArray());
@@ -198,12 +213,28 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 			}
 		}
 		super.receiveCommand(command, data);
+		try {
+			this.startServer();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+	
+	@Override
+	public void close() throws IOException {
+		closeServer();
+		super.close();
 	}
 
-	private void loadDataset(String graphURI) {
+	public void loadDataset(String graphURI) {
 
 		try {
-			DataLoader.main(new String[] { "-defaultGraph", graphURI, "RWStore.properties", datasetFolderName });
+			File dir = new File(datasetFolderName);
+			DataLoader.main(new String[] { "-defaultGraph", graphURI, "RWStore.properties", dir.getAbsolutePath() });
+			
+			FileUtils.deleteDirectory(dir);
+			dir.mkdirs();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -219,9 +250,9 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 	}
 
 	public void internalInit() {
-		datasetFolderName = "./myvol/datasets";
+		datasetFolderName = "myvol/datasets";
 		File theDir = new File(datasetFolderName);
-		theDir.mkdir();
+		theDir.mkdirs();
 	}
 
 }

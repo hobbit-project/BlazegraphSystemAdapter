@@ -27,7 +27,7 @@ public class BlazegraphAdapterTest {
 
 	private void start(BlazegraphAdapter task) throws Exception {
 		task.internalInit();
-		task.startServer();
+		task.startServer(); 
 		
 	}
 
@@ -74,7 +74,7 @@ public class BlazegraphAdapterTest {
 		try {
 			byte[] data = "PREFIX dc: <http://purl.org/dc/elements/1.1/> INSERT DATA { <http://example/egbook3> dc:title  \"This is an example title\" }"
 					.getBytes();
-			task.receiveGeneratedData(data);
+			task.insertData(data);
 
 			data = "SELECT ?s {?s <http://purl.org/dc/elements/1.1/title> ?o}".getBytes();
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -101,7 +101,7 @@ public class BlazegraphAdapterTest {
 			byte[] data = "<http://example/egbook3> <http://purl.org/dc/elements/1.1/title>  \"This is an example titleA\".\n"
 					.getBytes();
 			// bulkload
-			task.receiveGeneratedData(data);
+			task.saveData(data);
 			// sparql
 			String query  = "SELECT ?s {?s <http://purl.org/dc/elements/1.1/title> ?o}";
 			data = task.sparql("", query).toByteArray();
@@ -131,7 +131,7 @@ public class BlazegraphAdapterTest {
 	@Test
 	public void task3Test() throws Exception {
 		BlazegraphAdapter task = new BlazegraphAdapter();
-		start(task);
+		task.internalInit();
 		try {
 			// data: length:name:length:content
 			byte[] name = "http://urn.1".getBytes();
@@ -141,8 +141,10 @@ public class BlazegraphAdapterTest {
 			byte[] data = ArrayUtils.addAll(nameLen, name);
 			data = ArrayUtils.addAll(data, contentLen);
 			data = ArrayUtils.addAll(data, content);
-			task.receiveGeneratedData(data);
+			task.saveData(data);
+			task.loadDataset("http://test.com.1");
 
+			
 			name = "http://urn.2".getBytes();
 			nameLen = ByteBuffer.allocate(4).putInt(name.length).array();
 			content = "<http://example/egbook5> <http://purl.org/dc/elements/1.1/title>  \"a\" . \n".getBytes();
@@ -150,9 +152,10 @@ public class BlazegraphAdapterTest {
 			data = ArrayUtils.addAll(nameLen, name);
 			data = ArrayUtils.addAll(data, contentLen);
 			data = ArrayUtils.addAll(data, content);
-			task.receiveGeneratedData(data);
-
-			data = "SELECT ?s FROM <http://urn.2> {?s <http://purl.org/dc/elements/1.1/title> ?o}".getBytes();
+			task.saveData(data);
+			task.loadDataset("http://test.com.2");
+			start(task);
+			data = "SELECT ?s FROM <http://test.com.2> {?s <http://purl.org/dc/elements/1.1/title> ?o}".getBytes();
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			task.select(data, baos);
 			List<String> results = convertResults(baos, new String[] {"s"});
