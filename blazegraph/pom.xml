@@ -26,13 +26,11 @@
 			<version>0.0.1-SNAPSHOT</version>
 		</dependency>
 
-		<dependency>
-			<groupId>com.blazegraph</groupId>
-			<artifactId>bigdata</artifactId>
-			<version>2.0.0</version>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/repository/blazegraph.jar</systemPath>
-		</dependency>
+<!-- 		<dependency> -->
+<!-- 			<groupId>com.blazegraph</groupId> -->
+<!-- 			<artifactId>bigdata</artifactId> -->
+<!-- 			<version>2.0.0</version> -->
+<!-- 		</dependency> -->
 
 		<dependency>
 			<groupId>org.apache.httpcomponents</groupId>
@@ -48,6 +46,11 @@
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-log4j12</artifactId>
 			<version>1.7.6</version>
+		</dependency>
+		<dependency>
+			<groupId>com.blazegraph</groupId>
+			<artifactId>bigdata-core</artifactId>
+			<version>2.0.0</version>
 		</dependency>
 	</dependencies>
 	<repositories>

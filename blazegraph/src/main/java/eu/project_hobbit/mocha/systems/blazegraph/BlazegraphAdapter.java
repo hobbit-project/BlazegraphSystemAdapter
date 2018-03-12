@@ -5,10 +5,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.Reader;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.io.FileUtils;
@@ -46,10 +48,20 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 	private int loadingNumber = 0;
 	private String datasetFolderName;
 
+	public static void main(String args[]) throws Exception {
+		BlazegraphAdapter ba = new BlazegraphAdapter();
+		ba.startServer();
+//		ba.receiveCommand(BULK_LOAD_DATA_GEN_FINISHED, DATA);
+		for(int i=1;i<2;i++) {
+			System.out.println(ba.sparql("1", "SELECT * {?s ?p ?o} LIMIT 1").toString());
+		}
+		ba.closeServer();
+	}
+	
 	@Override
 	public void receiveGeneratedData(byte[] arg0) {
 		if (dataLoadingFinished == false) {
-
+			System.out.println("Bulk Load Size: "+arg0.length);
 			saveData(arg0);
 
 			// graphUris.add(fileName);
@@ -61,10 +73,11 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 			insertData(arg0);
 		}
 	}
-	
-	public void insertData(byte[] arg0) {
-		String insertQuery = RabbitMQUtils.readString(arg0);
 
+	public void insertData(byte[] arg0) {
+		byte[] data2 = Arrays.copyOfRange(arg0, 4, arg0.length);
+		String insertQuery = RabbitMQUtils.readString(data2);
+		System.out.println("[UPDATE] Got update: "+insertQuery.replace("\n", " "));
 		UpdateRequest updateRequest = UpdateFactory.create(insertQuery);
 		try {
 			UpdateProcessor processor = UpdateExecutionFactory.createRemote(updateRequest, url);
@@ -75,19 +88,21 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 	}
 
 	public void saveData(byte[] data) {
-		byte[] lengthNameArr = Arrays.copyOfRange(data, 0, 4);
-		int lengthName = ByteBuffer.wrap(lengthNameArr).getInt();
-		byte[] nameArr = Arrays.copyOfRange(data, 4, 4+lengthName);
-		String fileName = RabbitMQUtils.readString(nameArr);
-		byte[] lengthContentArr = Arrays.copyOfRange(data, lengthName + 4, lengthName + 8);
-		int lengthContent = ByteBuffer.wrap(lengthContentArr).getInt();
-		byte[] content = Arrays.copyOfRange(data, lengthName + 8, lengthName + 8 + lengthContent);
+		ByteBuffer dataBuffer = ByteBuffer.wrap(data);
+		String fileName = RabbitMQUtils.readString(dataBuffer);
 
+		System.out.println("Receiving file: " + fileName);
+
+		// graphUris.add(fileName);
+
+		byte[] content = new byte[dataBuffer.remaining()];
+		dataBuffer.get(content, 0, dataBuffer.remaining());
 
 		if (content.length != 0) {
 			if (fileName.contains("/"))
-				fileName = fileName.replaceAll("[^/]*[/]", "");
-			try(PrintWriter pw = new PrintWriter(datasetFolderName+File.separator+fileName+".ttl")){
+				fileName = fileName.replaceAll("[^/]*[/]", "");	
+			
+			try (PrintWriter pw = new PrintWriter(datasetFolderName + File.separator + fileName + ".ttl")) {
 				pw.print(RabbitMQUtils.readString(content));
 				pw.flush();
 			} catch (IOException e) {
@@ -95,86 +110,111 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 				e.printStackTrace();
 			}
 		}
-		LOGGER.info("Receiving file: " + fileName);
+		System.out.println("Receiving file: " + fileName);
 	}
 
 	public void insert(String queryString) {
 		// TODO: Virtuoso hack
 		queryString = queryString.replaceFirst("INSERT DATA", "INSERT");
 		queryString += "WHERE { }\n";
-
+		System.out.println("[UPDATE] Got update: "+queryString.replace("\n", " ").substring(0, 40));
+//		System.out.println("INSERT "+queryString.replace("\n", " "));
 		UpdateRequest updateRequest = UpdateFactory.create(queryString);
 		try {
 			UpdateProcessor processor = UpdateExecutionFactory.createRemote(updateRequest, url);
 			processor.execute();
 		} catch (Exception e) {
-			e.printStackTrace();
+			System.out.println("[UPDATE] Could not update due to: "+ e);
 		}
 	}
 
 	public ByteArrayOutputStream sparql(String taskId, String queryString) {
+//		System.out.println("[SELECT] Got query: {}", queryString.replace("\n", " "));
+		System.out.println("[SELECT] Got query: "+ queryString.replace("\n", " "));
 		Query query = QueryFactory.create(queryString);
 		QueryExecution qe = QueryExecutionFactory.createServiceRequest(url, query);
 		ResultSet results = null;
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
+		
 		try {
 			results = qe.execSelect();
 			ResultSetFormatter.outputAsJSON(outputStream, results);
 		} catch (Exception e) {
-			LOGGER.info("Problem while executing task " + taskId + ": " + queryString);
+			System.out.println("SPARQL problem 1 "+e);
+			System.out.println("[SELECT] Problem while executing task " + taskId + ": " + queryString);
 			// TODO: fix this hacking
 			try {
 				outputStream.write(
 						"{\"head\":{\"vars\":[\"xxx\"]},\"results\":{\"bindings\":[{\"xxx\":{\"type\":\"literal\",\"value\":\"XXX\"}}]}}"
 								.getBytes());
 			} catch (IOException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
+				System.err.println("[SELECT] Could not write JSON due to I/O "+e1);
 			}
-			e.printStackTrace();
+			System.err.println("[SELECT] Could not write JSON "+e);
 		} finally {
 			qe.close();
+			System.out.println("[SELECT] finish query Execution");
 		}
 		return outputStream;
 	}
 
 	@Override
 	public void receiveGeneratedTask(String taskId, byte[] data) {
-		ByteBuffer buffer = ByteBuffer.wrap(data);
-		String queryString = RabbitMQUtils.readString(data);
+		byte[] data2 = Arrays.copyOfRange(data, 4, data.length);
+		String queryString = RabbitMQUtils.readString(data2).trim();
 		long timestamp1 = System.currentTimeMillis();
-		// LOGGER.info(taskId);
+		// System.out.println(taskId);
+		System.out.println("[Task] received task "+taskId);
 		if (queryString.contains("INSERT DATA")) {
-			insert(queryString);
+			try {
+				insert(queryString);
+			}catch(Exception e) {
+				System.out.println("[INSERT] problem "+e);
+			}
 			try {
 				this.sendResultToEvalStorage(taskId, RabbitMQUtils.writeString(""));
-			} catch (IOException e) {
-				LOGGER.error("Got an exception while sending results.", e);
+			} catch (Exception e) {
+				System.err.println("[Task] Got an exception while sending results. "+e);
 			}
+			
 		} else {
-
-			ByteArrayOutputStream outputStream = sparql(taskId, queryString);
+			byte[] response;
 			try {
-				this.sendResultToEvalStorage(taskId, outputStream.toByteArray());
-			} catch (IOException e) {
-				LOGGER.error("Got an exception while sending results.", e);
+				ByteArrayOutputStream outputStream = sparql(taskId, queryString);
+				response = outputStream.toByteArray();
+			} catch(Exception e) {
+				System.out.println("SPARQL problem 2 "+e);
+				response = new byte[0];
 			}
+			try {
+				this.sendResultToEvalStorage(taskId, response);
+			} catch (IOException e) {
+				System.err.println("[Task] Got an exception while sending results. "+e);
+			} 
 		}
 		long timestamp2 = System.currentTimeMillis();
-		LOGGER.info("Task " + taskId + ": " + (timestamp2 - timestamp1));
+		System.out.println("[Task] Task " + taskId + ": " + (timestamp2 - timestamp1));
 	}
 
 	@Override
 	public void receiveCommand(byte command, byte[] data) {
-
-		if (BULK_LOAD_DATA_GEN_FINISHED == command) {
+		boolean started = this.pingServer(10000);
+		if(!started) {
+			try {
+				this.serverProcess.waitFor(10000, TimeUnit.MILLISECONDS);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		
+		if (serverProcess !=null && BULK_LOAD_DATA_GEN_FINISHED == command) {
 
 			ByteBuffer buffer = ByteBuffer.wrap(data);
 			int numberOfMessages = buffer.getInt();
 			boolean lastBulkLoad = buffer.get() != 0;
 
-			LOGGER.info("Bulk loading phase (" + loadingNumber + ") begins");
+			System.out.println("[RecvCommand] Bulk loading phase (" + loadingNumber + ") begins");
 
 			// if all data have been received before BULK_LOAD_DATA_GEN_FINISHED command
 			// received
@@ -183,24 +223,20 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 				allDataReceivedMutex.release();
 			}
 
-			LOGGER.info("Wait for receiving all data for bulk load " + loadingNumber + ".");
+			System.out.println("[RecvCommand] Wait for receiving all data for bulk load " + loadingNumber + ".");
 			try {
 				allDataReceivedMutex.acquire();
 			} catch (InterruptedException e) {
-				LOGGER.error(
-						"Exception while waitting for all data for bulk load " + loadingNumber + " to be recieved.", e);
+				System.err.println(
+						"[RecvCommand] Exception while waitting for all data for bulk load " + loadingNumber + " to be recieved. "+e);
 			}
-			LOGGER.info("All data for bulk load " + loadingNumber + " received. Proceed to the loading...");
-
+			System.out.println("[RecvCommand] All data for bulk load " + loadingNumber + " received. Proceed to the loading...");
+			this.closeServer();
 			loadDataset("http://graph.version." + loadingNumber);
+			
+			
 
-			try {
-				sendToCmdQueue(BULK_LOADING_DATA_FINISHED);
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-
-			LOGGER.info("Bulk loading phase (" + loadingNumber + ") is over.");
+			System.out.println("[RecvCommand] Bulk loading phase (" + loadingNumber + ") is over.");
 
 			loadingNumber++;
 
@@ -209,18 +245,23 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 				File theDir = new File(datasetFolderName);
 				for (File f : theDir.listFiles())
 					f.delete();
-				LOGGER.info("All bulk loading phases are over.");
+				System.out.println("[RecvCommand] All bulk loading phases are over.");
+			}
+			try {
+				this.startServer();
+			} catch (Exception e) {
+				System.err.println("[RecvCommand] Could not start server "+e);
+			}
+			try {
+				sendToCmdQueue(BULK_LOADING_DATA_FINISHED);
+			} catch (IOException e) {
+				e.printStackTrace();
 			}
 		}
 		super.receiveCommand(command, data);
-		try {
-			this.startServer();
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		
 	}
-	
+
 	@Override
 	public void close() throws IOException {
 		closeServer();
@@ -231,28 +272,36 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 
 		try {
 			File dir = new File(datasetFolderName);
-			DataLoader.main(new String[] { "-defaultGraph", graphURI, "RWStore.properties", dir.getAbsolutePath() });
-			
+			DataLoader.main(new String[] { "-verbose", "-defaultGraph", graphURI, "RWStore.properties", dir.getAbsolutePath() });
+
 			FileUtils.deleteDirectory(dir);
 			dir.mkdirs();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			System.err.println("[Load Dataset] loading dataset got an exception I/O "+e);
 		}
 	}
 
 	@Override
 	public void init() throws Exception {
-		LOGGER.info("Initialization begins.");
+		System.out.println("Initialization begins.");
 		super.init();
 		internalInit();
-		LOGGER.info("Initialization is over.");
+		System.out.println("Initialization is over.");
 	}
 
 	public void internalInit() {
 		datasetFolderName = "myvol/datasets";
 		File theDir = new File(datasetFolderName);
-		theDir.mkdirs();
+		try {
+			if(theDir.exists())
+				FileUtils.deleteDirectory(theDir);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		boolean mkdirs = theDir.mkdirs();
+//		System.out.println("[Internal Init] could make dirs? {}", mkdirs);
+		System.out.println("[Internal Init] could make dirs? "+mkdirs);
 	}
 
 }
