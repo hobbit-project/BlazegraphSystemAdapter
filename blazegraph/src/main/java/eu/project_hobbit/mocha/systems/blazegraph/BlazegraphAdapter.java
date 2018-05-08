@@ -231,7 +231,7 @@ public class BlazegraphAdapter extends AbstractBlazegraphAdapterTask {
 						"[RecvCommand] Exception while waitting for all data for bulk load " + loadingNumber + " to be recieved. "+e);
 			}
 			System.out.println("[RecvCommand] All data for bulk load " + loadingNumber + " received. Proceed to the loading...");
-			this.closeServer();
+			this.closeServer(false);
 			loadDataset("http://graph.version." + loadingNumber);
 			
 			
